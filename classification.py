@@ -40,7 +40,6 @@ def analize_dataset(dataset, dataset_test = None):
     if dataset_test is None:
         X = dataset.values[:,0:-1] # all columns except last one (income)
         Y = dataset.values[:,-1] # last column (income)
-        Y = Y.astype(int) # has to be discrete
 
         test_size = 0.3
 
@@ -48,7 +47,6 @@ def analize_dataset(dataset, dataset_test = None):
     else:
         X_train = dataset.values[:,0:-1]
         Y_train = dataset.values[:,-1]
-        Y_train = Y_train.astype(int)
         X_validation = dataset_test.values[:,0:-1]
         Y_validation = dataset_test.values[:,-1]
 
@@ -134,24 +132,27 @@ def analize_dataset(dataset, dataset_test = None):
     plt.show()
 
     # print combined confusion matrices
-    fig, axs = plt.subplots(int(len(models) / 2), 2, figsize=(8, 10), dpi=70)
+    fig, axs = plt.subplots(int(np.ceil(len(models) / 2)), 2, squeeze=False, figsize=(8, 10), dpi=70)
     for i, m in enumerate(metrics):
         print_conf_matrix(m[5], "Model %s" % m[0], axs[int(i / 2)][i % 2])
     plt.tight_layout()
     plt.show()
 
     # plot roc curves
+    fig, ax = plt.subplots()
     for i, roc_metrics in enumerate(roc_curves):
-        plt.plot(roc_metrics[0][0], roc_metrics[0][1], label="%s (auc = %0.2f)" % (models[i][0], roc_metrics[1]))
-    plt.plot((0, 1), (0, 1), '--', color='Gray')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
+        ax.plot(roc_metrics[0][0], roc_metrics[0][1], label="%s (auc = %0.2f)" % (models[i][0], roc_metrics[1]))
+    ax.plot((0, 1), (0, 1), '--', color='Gray')
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
     plt.legend(loc="lower right")
     plt.show()
 
 #%%
+# Just for doing some tests, it doesn't return any relevant information
+# and is not used in the final code
 def inference_attack(tf_model, X_train, X_validation):
     import tensorflow_privacy.privacy.privacy_tests.membership_inference_attack.membership_inference_attack as mia
     from tensorflow_privacy.privacy.privacy_tests.membership_inference_attack.data_structures import AttackInputData
@@ -191,19 +192,27 @@ def inference_attack(tf_model, X_train, X_validation):
 # returns the resulting dataset
 def deltaDoca(DATASET_PATH, DOCA_OUTPUT_PATH, eps):
     import os
+    from pathlib import Path
     import DOCA_python
     if os.path.exists(DOCA_OUTPUT_PATH):
         doca_df = pd.read_csv(DOCA_OUTPUT_PATH)
     else:
         data = pd.read_csv(DATASET_PATH)
+        last_column = data.iloc[:, -1]
+        data = data.iloc[:, :-1] # delete the last column, it doesn't need to be anonymized
         std = np.std(data, axis=0)
         normalized_df: pd.DataFrame = data / std
         normalized_df: np.ndarray = normalized_df.to_numpy()
+
         doca_df = DOCA_python.doca(normalized_df, eps, beta=60)
         doca_df = pd.DataFrame(doca_df)
         doca_df.columns = data.columns # restore original column names
         doca_df = doca_df * std # revert normalization
-        doca_df.to_csv(DOCA_OUTPUT_PATH, index=False)
+        doca_df = pd.concat([doca_df, last_column], axis=1) # restore the last column
+        
+        filepath = Path(DOCA_OUTPUT_PATH)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        doca_df.to_csv(filepath, index=False)
     return doca_df
 
 # %%
@@ -215,10 +224,10 @@ if __name__ == '__main__':
 
     from argparse import ArgumentParser, BooleanOptionalAction
 
-    parser = ArgumentParser(description='Analyze datasets')
-    parser.add_argument("--dataset", dest="dataset_train", help="dataset to use", default=DEFAULT_DATASET)
-    parser.add_argument("--test", dest="dataset_test", help="test dataset to use", default=DEFAULT_DATASET_TEST)
-    parser.add_argument("--algorithm", dest="algorithm", help="anonymization algorithm", default="doca")
+    parser = ArgumentParser(description='Run the analysis on the dataset')
+    parser.add_argument("--dataset", dest="dataset_train", help="path to the dataset to use for training", default=DEFAULT_DATASET)
+    parser.add_argument("--test", dest="dataset_test", help="path to the dataset to use for testing", default=DEFAULT_DATASET_TEST)
+    parser.add_argument("--algorithm", dest="algorithm", help="anonymization algorithm (only \"doca\" is available)", default="doca")
     parser.add_argument("--eps", type=int, dest="eps", help="epsilon parameter for the doca algorithm", default=100)
     parser.add_argument("--skip-original", dest="skip_original", help="skip analysis of original dataset", default=False, action=BooleanOptionalAction)
     args = parser.parse_args()
