@@ -74,6 +74,7 @@ def analize_dataset(dataset, dataset_test = None):
     plt.boxplot(cv_results)
     ax.set_xticklabels([m[0] for m in models])
     ax.set_ylim([0.7, 1])
+    ax.set_ylabel('accuracy')
     plt.show()
 
     # ml classification
